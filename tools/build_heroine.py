@@ -138,6 +138,28 @@ def call_claude(prompt: str) -> str:
     return result.stdout
 
 
+def _extract_last_fenced_block(response: str, lang: str) -> str | None:
+    """```lang ... ``` ブロックを抽出する。
+    内部に入れ子の``` フェンスがある場合でも、
+    レスポンス末尾に最も近い``` を外側クローズとして扱う。
+    """
+    start_marker = f"```{lang}"
+    start = response.find(start_marker)
+    if start == -1:
+        return None
+    content_start = response.find("\n", start)
+    if content_start == -1:
+        return None
+    content_start += 1  # \n の次
+
+    # 末尾から逆検索して外側クローズフェンスを探す
+    last_fence = response.rfind("\n```")
+    if last_fence == -1 or last_fence < content_start:
+        return None
+
+    return response[content_start:last_fence].strip()
+
+
 def parse_response(response: str) -> tuple[dict, str]:
     """レスポンスからJSON（vars）とmarkdown（character section）を抽出"""
 
@@ -148,13 +170,13 @@ def parse_response(response: str) -> tuple[dict, str]:
     vars_dict = json.loads(json_match.group(1))
 
     # markdownセクション抽出
-    md_match = re.search(r"```markdown\s*(.*?)```", response, re.DOTALL)
-    if not md_match:
-        md_match = re.search(r"```md\s*(.*?)```", response, re.DOTALL)
-    if not md_match:
+    # NOTE: re.DOTALL + 非貪欲(.*?)だとCHINK-Aなどの内部コードフェンス```で止まるため、
+    # rfindで最後の```を外側クローズとして扱う方式に変更
+    character_section = _extract_last_fenced_block(response, "markdown")
+    if character_section is None:
+        character_section = _extract_last_fenced_block(response, "md")
+    if character_section is None:
         raise ValueError("markdownブロックが見つかりません\n--- response head ---\n" + response[:500])
-
-    character_section = md_match.group(1).strip()
     return vars_dict, character_section
 
 
