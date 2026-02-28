@@ -239,7 +239,7 @@
 
 ## [PASSWORD VERIFICATION - 課金版認証]
 
-**システムパスワード（変更禁止）**: rxXnFWZdWYp7
+**システムパスワード（変更禁止）**: bFZZtfvuOOHI
 
 ### パスワード検証ルール
 
