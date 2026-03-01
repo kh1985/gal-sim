@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GAL_SIM ヒロイン _FULL.md ビルドツール
+GAL_SIM ヒロイン キャラクターMD ビルドツール
 
 使い方:
   python tools/build_heroine.py [yaml_path]
@@ -8,7 +8,7 @@ GAL_SIM ヒロイン _FULL.md ビルドツール
 yaml_path を省略すると galge-heroines/ の最新ファイルを自動選択。
 
 出力:
-  prompts/<filename>_FULL.md
+  prompts/characters/<filename>.md  （SAKURAI_HIKARI.md 形式）
 """
 
 import json
@@ -22,72 +22,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 EXPAND_PROMPT_PATH = Path(__file__).parent / "gal_sim_expand.md"
-TEMPLATE_SOURCE = ROOT / "prompts" / "SUMIRE_FULL.md"
-OUTPUT_DIR = ROOT / "prompts"
+OUTPUT_DIR = ROOT / "prompts" / "characters"
 GALGE_HEROINES_DIR = Path(
     "/Users/kenjihachiya/Desktop/work/development/character/output/galge-heroines"
 )
-
-# SUMIRE_FULL.md内の固有文字列 → テンプレート変数への置換マップ
-# 左辺: SUMIRE_FULL.md内の文字列
-# 右辺: {KEY} 形式のプレースホルダー（varsで置換）
-INLINE_REPLACEMENTS: list[tuple[str, str]] = [
-    (
-        "すみれのCHINK、防壁パターン、Say/Do Gapに対応",
-        "{FIRST_NAME}のCHINK、防壁パターン、Say/Do Gapに対応",
-    ),
-    ("ヒロイン（柊すみれ）", "ヒロイン（{FULL_NAME}）"),
-    ("（友達モードに戻ろうとする）", "（{MODE_NAME}に戻ろうとする）"),
-    (
-        "すみれのCHINK（昔と違うね、友達じゃダメ？、他の誰かと付き合ったら）",
-        "{FIRST_NAME}のCHINK（{CHINK_SUMMARY}）",
-    ),
-    (
-        "すみれの防壁パターン（友達トーク、恋愛回避、弱点突かれた時の強化反応）",
-        "{FIRST_NAME}の防壁パターン（{BARRIER_SUMMARY}）",
-    ),
-    (
-        "プレイヤーは**すみれのペルソナを理解して選ぶ**",
-        "プレイヤーは**{FIRST_NAME}のペルソナを理解して選ぶ**",
-    ),
-    (
-        "1. 「すみれ、最近雰囲気変わったよね」（CHINK-A近似）",
-        "1. {STAGE1_CHOICE_A}",
-    ),
-    (
-        "2. 「久しぶりだね。元気だった？」（友達トーク維持）",
-        "2. {STAGE1_CHOICE_B}",
-    ),
-    (
-        "1. 「俺たち、ずっと友達のままでいいよね」（CHINK-B直撃狙い）",
-        "1. {STAGE2_CHOICE_A}",
-    ),
-    (
-        "2. 「すみれ、そのワンピース似合ってるよ」（Say/Do Gap指摘）",
-        "2. {STAGE2_CHOICE_B}",
-    ),
-    (
-        "1. 「すみれは、誰かいい人いないの？」（CHINK-C狙い）",
-        "1. {STAGE3_CHOICE_A}",
-    ),
-    ("- すみれに刺さらない行動", "- {FIRST_NAME}に刺さらない行動"),
-    ("- すみれのペルソナを無視した行動", "- {FIRST_NAME}のペルソナを無視した行動"),
-    (
-        '   - 抵抗値0→10: 「…っ、何、してた…の…」（茫然）',
-        "   - 抵抗値0→10: {RESET_DIALOGUE}",
-    ),
-    (
-        '「友達モード」に戻ろうとする（でも身体は覚えている）',
-        '「{MODE_NAME}」に戻ろうとする（でも身体は覚えている）',
-    ),
-    ("すみれの肩が、震えた。", "{FIRST_NAME}の肩が、震えた。"),
-    ("すみれは鞄を肩にかけ、立ち上がった。", "{FIRST_NAME}は鞄を肩にかけ、立ち上がった。"),
-    # パスワード（SUMIRE固有値 → 新キャラのパスワード）
-    ("rxXnFWZdWYp7", "{PASSWORD}"),
-]
-
-# キャラクターセクションの区切りマーカー
-CHARACTER_SECTION_MARKER = "\n## 組み込みヒロイン："
 
 
 def generate_password(length: int = 10) -> str:
@@ -124,7 +62,7 @@ def call_claude(prompt: str) -> str:
             ["claude", "-p", prompt],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
             env=env,
         )
     except FileNotFoundError:
@@ -180,47 +118,46 @@ def parse_response(response: str) -> tuple[dict, str]:
     return vars_dict, character_section
 
 
-def apply_template(vars_dict: dict, character_section: str) -> str:
-    """SUMIRE_FULL.mdをベースに新キャラの_FULL.mdを生成"""
-    content = TEMPLATE_SOURCE.read_text(encoding="utf-8")
-
-    # PASSWORDが未指定なら自動生成
+def build_character_md(vars_dict: dict, character_section: str) -> str:
+    """SAKURAI_HIKARI.md 形式のキャラクターMDを生成"""
     if "PASSWORD" not in vars_dict or not vars_dict["PASSWORD"]:
         vars_dict["PASSWORD"] = generate_password()
 
-    # インライン置換（順序依存しないため全件チェック）
-    for old, template_str in INLINE_REPLACEMENTS:
-        try:
-            new = template_str.format(**vars_dict)
-        except KeyError as e:
-            print(f"  ⚠️  変数不足（スキップ）: {e} → {template_str!r}")
-            continue
-        if old in content:
-            content = content.replace(old, new)
-        else:
-            print(f"  ⚠️  マーカーが見つかりませんでした（スキップ）: {old!r}")
+    # Claudeが # キャラクター知識ファイル： ヘッダーを含めて出力した場合はそのまま使う
+    if character_section.startswith("# キャラクター知識ファイル："):
+        return character_section + "\n"
 
-    # キャラクターセクションの差し替え
-    idx = content.find(CHARACTER_SECTION_MARKER)
-    if idx == -1:
-        raise ValueError(
-            f"キャラクターセクションマーカーが見つかりません: {CHARACTER_SECTION_MARKER!r}"
-        )
+    # 旧形式（## 組み込みヒロイン：）の場合はヘッダーを付与して変換
+    full_name = vars_dict.get("FULL_NAME", "不明")
 
-    # マーカー前の `---` ヘッダーも含めて切り取る
-    content_head = content[:idx]
-    # 末尾の `\n---\n` を除去（character_section側に含まれるため）
-    last_sep = content_head.rfind("\n---\n")
-    if last_sep != -1 and last_sep > len(content_head) - 10:
-        content_head = content_head[:last_sep]
+    furigana = ""
+    m = re.search(r"## 組み込みヒロイン：.+?（(.+?)）", character_section)
+    if m:
+        furigana = m.group(1)
 
-    return content_head + "\n\n" + character_section + "\n"
+    name_with_furigana = f"{full_name}（{furigana}）" if furigana else full_name
+
+    header = (
+        f"# キャラクター知識ファイル：{name_with_furigana}\n"
+        "\n"
+        "> **使い方**: GEM_INSTRUCTIONS_JP.md または GEM_INSTRUCTIONS_EN.md と一緒にGeminiに貼り付けて使う。\n"
+    )
+
+    body = re.sub(
+        r"^---\s*\n+## 組み込みヒロイン：.+",
+        "## ヒロインプロフィール",
+        character_section,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+    return header + "\n" + body + "\n"
 
 
 def derive_output_name(yaml_path: Path) -> str:
     stem = yaml_path.stem  # e.g., "01_sakurai_hikari" or "sakurai_hikari"
     stem = re.sub(r"^\d+_", "", stem)  # 数字プレフィックス除去
-    return stem.upper() + "_FULL.md"
+    return stem.upper() + ".md"
 
 
 def main():
@@ -257,13 +194,10 @@ def main():
         print(f"パースエラー: {e}")
         sys.exit(1)
 
-    try:
-        result = apply_template(vars_dict, character_section)
-    except ValueError as e:
-        print(f"テンプレート適用エラー: {e}")
-        sys.exit(1)
+    result = build_character_md(vars_dict, character_section)
 
     out_name = derive_output_name(yaml_path)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUTPUT_DIR / out_name
     out_path.write_text(result, encoding="utf-8")
 
